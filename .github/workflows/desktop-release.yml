@@ -1,4 +1,5 @@
 # Build unsigned community Desktop packages on native hosted runners and attach them to a GitHub release.
+# A tag or an explicit workflow dispatch is the only publication trigger.
 name: Desktop community release
 
 on:
