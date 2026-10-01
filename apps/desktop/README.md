@@ -140,7 +140,7 @@ macOS and Linux GUI launches inherit only the session manager's environment, wit
 
 ## Develop
 
-The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R elsewhere) and Restart App and Host. Restart waits for Host shutdown before relaunching Electron and starting a new Host; neither action rebuilds source files.
+The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R elsewhere) and Restart App and Host. Restart waits for Host shutdown before relaunching Electron and starting a new Host; neither action rebuilds source files. Linux x64 development requires a graphical session; its window menu bar stays hidden until Alt is pressed.
 
 `dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
 
@@ -150,7 +150,7 @@ pnpm run dev:desktop
 
 Development Harness state defaults to `apps/desktop/.desktop-build/development/home`, the disposable npm project lives at `apps/desktop/.desktop-build/development/project`, and Electron browser data lives at `apps/desktop/.desktop-build/development/electron-user-data`. Sessions, settings, credentials, package links, and browser data therefore stay out of the user's normal Harness home. An explicit `DSH_HOME` replaces only the development Harness home. Renderer DevTools opens automatically; Main, Renderer, and dsh Host debugging listen on ports 9229, 9222, and 9230. `DSH_DESKTOP_MAIN_INSPECT_PORT`, `DSH_DESKTOP_RENDERER_DEBUG_PORT`, and `DSH_DESKTOP_HOST_INSPECT_PORT` replace those ports, while `DSH_DESKTOP_OPEN_DEVTOOLS=0` keeps the detached Renderer tools closed.
 
-After an explicit build, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again:
+After an explicit build, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again. A missing Web frontend `dist/index.html` stops startup with a missing-artifact error:
 
 ```sh
 pnpm run start:desktop
@@ -229,7 +229,20 @@ pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
 ```
 
-The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
+The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux x64 builds run on a Linux x64 host and produce local installers without release signing or automatic updates:
+
+```sh
+pnpm run package:desktop:linux:x64
+```
+
+The Linux command writes `deepseek-harness-<version>-linux-amd64.deb`, `deepseek-harness-<version>-linux.x86_64.rpm`, and an AppImage to `apps/desktop/.desktop-build/targets/linux-x64/artifacts/`. The deb and rpm packages install the `deepseek-harness` executable and desktop entry; the application carries its Electron, Node, pnpm, Python, and dsh runtime and does not require system Node.js or pnpm. Linux packaging does not read macOS or Windows release credentials and does not create an update feed.
+
+GitHub community releases build unsigned Windows x64 packages and ad hoc-signed macOS packages without the official update service or release credentials. Push a `desktop-v<version>` tag to run the native Linux x64, macOS arm64, macOS x64, and Windows x64 jobs; the workflow checks that the tag matches the Desktop package version and attaches the installers to a GitHub Release. The packages are suitable for local distribution; Windows SmartScreen and macOS Gatekeeper may require an explicit user approval because the builds are not issued by the official signing identities:
+
+```sh
+git tag desktop-v<version>
+git push origin desktop-v<version>
+```
 
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Electron archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 

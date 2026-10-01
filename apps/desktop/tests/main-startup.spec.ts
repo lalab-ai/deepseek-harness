@@ -699,6 +699,7 @@ describe('desktop main startup', () => {
     await harness.preparing.promise
     const window = harness.windows[0]!
     expect(window.urls).toEqual(['dsh-app://app/'])
+    expect(window.options).toMatchObject({ autoHideMenuBar: platform === 'linux' })
     if (platform === 'darwin') {
       expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', vibrancy: 'sidebar', backgroundColor: '#00000000' })
     } else if (platform === 'win32') {

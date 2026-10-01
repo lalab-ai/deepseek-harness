@@ -1,4 +1,4 @@
-/** Load platform-local release settings without changing the caller's process environment. */
+/** Load packaging settings without changing the caller's process environment. */
 
 import { accessSync, constants, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -11,6 +11,7 @@ import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mj
 import { resolveMacOSPackageSettings } from './macos-package-settings.mjs'
 import { resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
 import { resolveWindowsPackageSettings } from './windows-package-settings.mjs'
+import { isGitHubDesktopDistribution } from './desktop-distribution.mjs'
 
 const APP_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SHARED_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|NPM_REGISTRY|MANDATORY_UPDATE_(?:CONFIG|(?:TEST|PROD)_ORIGIN))|DOWNLOAD_TEST_RELEASE_ID|DOWNLOAD_(?:TEST|PROD)_(?:ORIGIN|COS_BUCKET|COS_SECRET_ID|COS_SECRET_KEY))$/u
@@ -20,13 +21,22 @@ const AMBIENT_RELEASE_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|MANDA
 const FILE_SETTINGS = ['DSH_DESKTOP_WINDOWS_CER_FILE', 'DSH_DESKTOP_WINDOWS_SIGNTOOL', 'APPLE_API_KEY', 'APPLE_KEYCHAIN', 'CSC_LINK']
 
 /**
- * Read the target's required UTF-8 dotenv file; release settings never fall back to ambient values.
- * @param {'win32' | 'darwin'} platform Target platform.
- * @param {NodeJS.ProcessEnv} environment Parent environment, retained only for unrelated build tools.
+ * Read official macOS/Windows dotenv settings; GitHub and Linux builds use credential-free environment settings.
+ * @param {'win32' | 'darwin' | 'linux'} platform Target platform.
+ * @param {NodeJS.ProcessEnv} environment Parent build environment; GitHub and Linux accept app ID and registry settings.
  * @param {string} appRoot Desktop application directory; relative credential paths resolve here.
- * @returns {NodeJS.ProcessEnv} Isolated environment with file-owned release settings.
+ * @returns {NodeJS.ProcessEnv} Packaging environment with unrelated release settings removed.
  */
 export function loadDesktopPackageEnvironment(platform, environment = process.env, appRoot = APP_ROOT) {
+  if (isGitHubDesktopDistribution(environment) || platform === 'linux') {
+    const appId = environment.DSH_DESKTOP_APP_ID?.trim() || 'com.deepseek.harness'
+    const registry = environment.DSH_DESKTOP_NPM_REGISTRY?.trim()
+    return {
+      ...Object.fromEntries(Object.entries(environment).filter(([name]) => !AMBIENT_RELEASE_SETTING.test(name))),
+      DSH_DESKTOP_APP_ID: appId,
+      ...(registry === undefined || registry === '' ? {} : { DSH_DESKTOP_NPM_REGISTRY: registry }),
+    }
+  }
   const path = join(appRoot, platform === 'win32' ? '.env.windows' : '.env.macos')
   let contents
   try {
@@ -71,14 +81,15 @@ function requireReadableFile(environment, name) {
 
 /**
  * Validate release configuration before preparation without invoking a token or Apple's services.
- * @param {NodeJS.ProcessEnv} environment File-owned release settings.
- * @param {{ platform: 'win32' | 'darwin', arch: string }} target Selected release target.
+ * @param {NodeJS.ProcessEnv} environment Loaded packaging settings.
+ * @param {{ platform: 'win32' | 'darwin' | 'linux', arch: string }} target Selected release target.
  * @param {{ unsigned?: boolean, prepareOnly?: boolean }} options Explicit packaging mode.
  * @returns {void}
  */
 export function validateDesktopPackageEnvironment(environment, target, options = {}) {
   resolveDesktopAppId(environment)
   resolveNpmRegistry(environment)
+  if (isGitHubDesktopDistribution(environment) || target.platform === 'linux') return
   resolveDesktopPolicyEnvironment(environment)
   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
   else resolveWindowsPackageSettings(environment)

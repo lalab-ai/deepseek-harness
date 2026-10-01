@@ -23,6 +23,31 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it('builds Linux locally without inheriting release credentials or update services', async () => {
+    await withDirectory(async (directory) => {
+      const parent = { PATH: 'build-tools', ...RELEASE, ...MAC_IDENTITY, CSC_LINK: 'private.p12',
+        DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'private-pin' }
+      const environment = loadDesktopPackageEnvironment('linux', parent, directory)
+      expect(environment).toEqual({ PATH: 'build-tools', DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID })
+      expect(loadDesktopPackageEnvironment('linux', {}, directory)).toEqual({ DSH_DESKTOP_APP_ID: 'com.deepseek.harness' })
+      expect(() => { validateDesktopPackageEnvironment(environment, { platform: 'linux', arch: 'x64' }) }).not.toThrow()
+      expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'invalid' }, { platform: 'linux', arch: 'x64' }) })
+        .toThrow(/reverse-DNS/u)
+      expect(parent.CSC_LINK).toBe('private.p12')
+    })
+  })
+
+  it('builds a GitHub community package without official release credentials', async () => {
+    await withDirectory(async (directory) => {
+      const environment = loadDesktopPackageEnvironment('darwin', {
+        DSH_DESKTOP_DISTRIBUTION: 'github', DSH_DESKTOP_APP_ID: 'com.example.community',
+        APPLE_ID: 'must-not-load', CSC_LINK: 'must-not-load', DSH_DESKTOP_AUTO_UPDATE_ENV: 'must-not-load',
+      }, directory)
+      expect(environment).toEqual({ DSH_DESKTOP_DISTRIBUTION: 'github', DSH_DESKTOP_APP_ID: 'com.example.community' })
+      expect(() => { validateDesktopPackageEnvironment(environment, MACOS) }).not.toThrow()
+    })
+  })
+
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {
     await withDirectory(async (directory) => {
       const parent = { DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '8' }

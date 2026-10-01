@@ -55,6 +55,7 @@ describe('desktop welcome window', () => {
     expect(options).toMatchObject({
       width: 600, height: 700, useContentSize: true, center: true, show: false,
       resizable: false, maximizable: false, fullscreenable: false,
+      autoHideMenuBar: platform === 'linux',
       webPreferences: {
         nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
         additionalArguments: ['--dsh-welcome-locale=zh-CN'],

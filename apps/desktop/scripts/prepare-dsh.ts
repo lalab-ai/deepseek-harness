@@ -30,6 +30,7 @@ import {
   signMacOSRuntime,
 } from './macos-runtime.ts'
 import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { isGitHubDesktopDistribution } from './desktop-distribution.mjs'
 import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
 import { selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
 
@@ -37,11 +38,14 @@ const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
 const DSH_OUTPUT_ROOT = BUILD_PATHS.dsh
 const BUILD_ROOT = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-'))
-const STORE_ROOT = join(BUILD_ROOT, 'store')
+const STORE_ROOT = process.env.DSH_DESKTOP_PNPM_STORE_DIR?.trim() || join(BUILD_ROOT, 'store')
 const RUNTIME_ROOT = BUILD_PATHS.runtime
 const PNPM_BUILD_STATE = BUILD_PATHS.dshPnpm
 const PACKAGE_SET_ROOT = BUILD_PATHS.packageSet
-const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
+const PREPARE_TARGET = resolveDesktopBuildTarget()
+const PREPARE_PLATFORM = desktopTargetPlatform(PREPARE_TARGET).platform
+const NODE = join(BUILD_PATHS.electron,
+  PREPARE_PLATFORM === 'win32' ? 'electron.exe' : PREPARE_PLATFORM === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron')
 const PNPM = join(RUNTIME_ROOT, 'pnpm', 'bin', 'pnpm.mjs')
 
 function manifestVersion(path: string, subject: string): string {
@@ -78,6 +82,7 @@ function runPnpm(args: readonly string[]): Promise<void> {
     const child = spawn(NODE, [
       '--expose-internals',
       PNPM,
+      ...(process.env.DSH_DESKTOP_PNPM_OFFLINE === '1' ? ['--config.offline=true'] : []),
       `--config.registry=${registry}`,
       `--config.store-dir=${STORE_ROOT}`,
       '--config.enable-global-virtual-store=false',
@@ -95,7 +100,7 @@ function runPnpm(args: readonly string[]): Promise<void> {
         NPM_CONFIG_USERCONFIG: userConfig,
         ...desktopNodeEnvironment(NODE, join(RUNTIME_ROOT, 'bin'), {}),
         PATH: `${join(RUNTIME_ROOT, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
-        XDG_CACHE_HOME: join(PNPM_BUILD_STATE, 'cache'),
+        XDG_CACHE_HOME: process.env.DSH_DESKTOP_PNPM_CACHE_DIR?.trim() || join(PNPM_BUILD_STATE, 'cache'),
         XDG_CONFIG_HOME: config,
         XDG_STATE_HOME: join(PNPM_BUILD_STATE, 'state'),
       },
@@ -129,8 +134,9 @@ async function main(): Promise<void> {
     )
     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
-    const targetName = resolveDesktopBuildTarget()
-    const target = { platform: process.platform, arch: desktopTargetPlatform(targetName).arch }
+    const targetName = PREPARE_TARGET
+    const target = desktopTargetPlatform(targetName)
+    const platform = target.platform
     const modules = join(BUILD_ROOT, 'node_modules')
     const officeManifest = JSON.parse(readFileSync(join(modules, '@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
     const officeEngine = selectOfficeEngine(officeManifest, target)
@@ -153,7 +159,7 @@ async function main(): Promise<void> {
     if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${officeEngine}`, 'prebuilds.json'))) {
       throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
     }
-    if (process.platform === 'darwin') {
+    if (platform === 'darwin' && !isGitHubDesktopDistribution(process.env)) {
       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:primary-native', () => signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
     }

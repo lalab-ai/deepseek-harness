@@ -1,0 +1,160 @@
+# Build unsigned community Desktop packages on native hosted runners and attach them to a GitHub release.
+name: Desktop community release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing desktop-v<version> tag to build and publish
+        required: true
+        type: string
+
+concurrency:
+  group: desktop-community-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: "24"
+  DSH_TELEMETRY_DISABLED: "1"
+  DSH_DESKTOP_DISTRIBUTION: github
+  DSH_DESKTOP_APP_ID: com.deepseek.harness
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+            script: github:linux:x64
+          - target: mac-arm64
+            runner: macos-15
+            script: github:mac:arm64
+          - target: mac-x64
+            runner: macos-15-intel
+            script: github:mac:x64
+          - target: win-x64
+            runner: windows-2025
+            script: github:win:x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve release version
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            tag="$INPUT_RELEASE_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          case "$tag" in
+            desktop-v*) version="${tag#desktop-v}" ;;
+            *) echo "Expected a desktop-v<version> tag, got $tag" >&2; exit 1 ;;
+          esac
+          [[ -n "$version" ]] || { echo 'The release tag has no version' >&2; exit 1; }
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Check version and build community package
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'const fs=require("node:fs"); const version=JSON.parse(fs.readFileSync("apps/desktop/package.json","utf8")).version; if(version!==process.env.RELEASE_VERSION) throw new Error(`Tag ${process.env.RELEASE_VERSION} does not match package version ${version}`)'
+          pnpm run package:desktop:${{ matrix.script }} -- --build-version "$RELEASE_VERSION"
+
+      - name: Collect distributable files
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="apps/desktop/.desktop-build/targets/${{ matrix.target }}/artifacts"
+          mkdir -p dist-release
+          case '${{ matrix.target }}' in
+            linux-x64) patterns=('*.AppImage' '*.deb' '*.rpm') ;;
+            mac-*) patterns=('*.dmg' '*.zip') ;;
+            win-x64) patterns=('*.exe') ;;
+          esac
+          for pattern in "${patterns[@]}"; do
+            find "$output" -maxdepth 1 -type f -name "$pattern" -exec cp {} dist-release/ \;
+          done
+          test -n "$(find dist-release -type f -print -quit)"
+          printf '%s\n' 'Community release files:'
+          ls -lh dist-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve release tag
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            echo "RELEASE_TAG=$INPUT_RELEASE_TAG" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist-release
+          merge-multiple: true
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist-release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist-release/* --title "DeepSeek Harness ${RELEASE_TAG#desktop-v}" --generate-notes
+          fi

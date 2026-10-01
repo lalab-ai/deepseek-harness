@@ -142,7 +142,7 @@ macOS 和 Linux 从图形界面启动的程序只继承会话管理器提供的�
 
 ## 开发
 
-开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。
+开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。Linux x64 开发需要图形会话；窗口菜单栏默认隐藏，按 Alt 才会显示。
 
 `dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
 
@@ -152,7 +152,7 @@ pnpm run dev:desktop
 
 开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
 
-显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
+显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物。缺少 Web 前端 `dist/index.html` 时，启动会停止并报告缺失产物：
 
 ```sh
 pnpm run start:desktop
@@ -231,7 +231,20 @@ pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
 ```
 
-macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
+macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux x64 构建要求 Linux x64 主机，并生成不需要发布签名或自动更新的本地安装包：
+
+```sh
+pnpm run package:desktop:linux:x64
+```
+
+Linux 命令会把 `deepseek-harness-<version>-linux-amd64.deb`、`deepseek-harness-<version>-linux.x86_64.rpm` 和 AppImage 写入 `apps/desktop/.desktop-build/targets/linux-x64/artifacts/`。deb 和 rpm 会安装 `deepseek-harness` 可执行文件及桌面项；应用自带 Electron、Node、pnpm、Python 和 dsh 运行时，不需要系统 Node.js 或 pnpm。Linux 打包不会读取 macOS 或 Windows 发布凭据，也不会创建更新清单。
+
+GitHub 社区版发布会在没有官方更新服务或发布凭据的情况下，构建未签名的 Windows x64 包和临时签名的 macOS 包。推送 `desktop-v<version>` 标签会运行 Linux x64、macOS arm64、macOS x64 和 Windows x64 原生构建任务；流水线会检查标签是否匹配 Desktop 包版本，并把安装包附加到 GitHub Release。构建产物适合本地分发；由于没有使用官方签名身份，Windows SmartScreen 和 macOS Gatekeeper 可能要求用户明确批准：
+
+```sh
+git tag desktop-v<version>
+git push origin desktop-v<version>
+```
 
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Electron 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 

@@ -99,6 +99,7 @@ async function main(): Promise<void> {
   for (const path of [
     join(APP_ROOT, 'lib', 'main.js'),
     join(REPOSITORY_ROOT, 'apps', 'desktop-host', 'lib', 'index.js'),
+    join(REPOSITORY_ROOT, 'apps', 'web', 'dist', 'index.html'),
   ]) {
     if (!existsSync(path)) throw new Error(`desktop development: missing built artifact ${path}`)
   }

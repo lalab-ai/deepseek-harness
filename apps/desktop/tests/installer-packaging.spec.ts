@@ -12,6 +12,31 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 
 describe('installer preparation preserves application dependencies', () => {
+  it('builds Linux installers with a stable command name and no automatic update service', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({ DSH_DESKTOP_APP_ID: 'com.example.installer' }, 'linux', 'x64')
+    expect(config).toMatchObject({
+      linux: { executableName: 'deepseek-harness', target: ['AppImage', 'deb', 'rpm'] },
+      deb: { packageName: 'deepseek-harness' },
+      rpm: { packageName: 'deepseek-harness' },
+      extraMetadata: { homepage: 'https://github.com/deepseek-ai/deepseek-harness', dshMandatoryUpdatePolicy: undefined },
+      publish: null,
+    })
+    expect(await config.beforeBuild()).toBe(true)
+  })
+
+  it('builds GitHub macOS and Windows packages without official signing services', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const mac = createElectronBuilderConfig({ DSH_DESKTOP_DISTRIBUTION: 'github', DSH_DESKTOP_APP_ID: 'com.example.community',
+      DSH_DESKTOP_TARGET_PLATFORM: 'darwin', DSH_DESKTOP_TARGET_ARCH: 'arm64' }, 'darwin', 'arm64')
+    expect(mac).toMatchObject({ artifactName: 'deepseek-harness-${version}-${os}-${arch}-community.${ext}',
+      mac: { identity: '-', forceCodeSigning: false, hardenedRuntime: false, notarize: false }, publish: null })
+    const win = createElectronBuilderConfig({ DSH_DESKTOP_DISTRIBUTION: 'github', DSH_DESKTOP_APP_ID: 'com.example.community',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' }, 'win32', 'x64')
+    expect(win).toMatchObject({ artifactName: 'deepseek-harness-${version}-${os}-${arch}-community.${ext}',
+      win: { forceCodeSigning: false }, publish: null })
+  })
+
   it.each(['win32', 'darwin'] as const)('rejects a missing production policy before signing on %s', async (platform) => {
     const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
     expect(() => createElectronBuilderConfig({ DSH_DESKTOP_APP_ID: 'com.example.installer',
