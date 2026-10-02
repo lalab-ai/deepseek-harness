@@ -35,42 +35,40 @@ jobs:
           - target: linux-x64
             runner: ubuntu-24.04
             script: github:linux:x64
+            shell: bash
           - target: mac-arm64
             runner: macos-15
             script: github:mac:arm64
+            shell: bash
           - target: mac-x64
             runner: macos-15-intel
             script: github:mac:x64
+            shell: bash
           - target: win-x64
             runner: windows-2025
             script: github:win:x64
+            shell: pwsh
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          # Manual reruns use the current default branch so a failed tag can be repaired without moving it.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
           fetch-depth: 1
           persist-credentials: false
 
       - name: Resolve release version
         env:
           INPUT_RELEASE_TAG: ${{ inputs.tag }}
-        shell: bash
+        shell: ${{ matrix.shell }}
         run: |
-          set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            tag="$INPUT_RELEASE_TAG"
-          else
-            tag="$GITHUB_REF_NAME"
-          fi
-          case "$tag" in
-            desktop-v*) version="${tag#desktop-v}" ;;
-            *) echo "Expected a desktop-v<version> tag, got $tag" >&2; exit 1 ;;
-          esac
-          [[ -n "$version" ]] || { echo 'The release tag has no version' >&2; exit 1; }
-          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
-          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const tag = process.env.GITHUB_EVENT_NAME === "workflow_dispatch" ? process.env.INPUT_RELEASE_TAG : process.env.GITHUB_REF_NAME;
+            if (!/^desktop-v[0-9][0-9A-Za-z.-]*$/.test(tag ?? "")) throw new Error(`Expected a desktop-v<version> tag, got ${tag}`);
+            appendFileSync(process.env.GITHUB_ENV, `RELEASE_TAG=${tag}\nRELEASE_VERSION=${tag.slice(9)}\n`);
+          '
 
       - uses: pnpm/action-setup@v4
         with:
@@ -83,33 +81,53 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        shell: bash
+        shell: ${{ matrix.shell }}
         run: pnpm install --frozen-lockfile
 
-      - name: Check version and build community package
-        shell: bash
+      - name: Check release version
+        shell: ${{ matrix.shell }}
         run: |
-          set -euo pipefail
-          node -e 'const fs=require("node:fs"); const version=JSON.parse(fs.readFileSync("apps/desktop/package.json","utf8")).version; if(version!==process.env.RELEASE_VERSION) throw new Error(`Tag ${process.env.RELEASE_VERSION} does not match package version ${version}`)'
-          pnpm run package:desktop:${{ matrix.script }} -- --build-version "$RELEASE_VERSION"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { validateDesktopBuildVersion } from "./apps/desktop/scripts/desktop-build-version.mjs";
+            const version = JSON.parse(readFileSync("apps/desktop/package.json", "utf8")).version;
+            validateDesktopBuildVersion(process.env.RELEASE_VERSION, version);
+          '
+
+      - name: Build community package
+        shell: ${{ matrix.shell }}
+        env:
+          DESKTOP_SCRIPT: ${{ matrix.script }}
+        run: |
+          node --input-type=module -e '
+            import { spawnSync } from "node:child_process";
+            const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit" });
+            if (result.error) throw result.error;
+            process.exit(result.status ?? 1);
+          '
 
       - name: Collect distributable files
-        shell: bash
+        shell: ${{ matrix.shell }}
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
         run: |
-          set -euo pipefail
-          output="apps/desktop/.desktop-build/targets/${{ matrix.target }}/artifacts"
-          mkdir -p dist-release
-          case '${{ matrix.target }}' in
-            linux-x64) patterns=('*.AppImage' '*.deb' '*.rpm') ;;
-            mac-*) patterns=('*.dmg' '*.zip') ;;
-            win-x64) patterns=('*.exe') ;;
-          esac
-          for pattern in "${patterns[@]}"; do
-            find "$output" -maxdepth 1 -type f -name "$pattern" -exec cp {} dist-release/ \;
-          done
-          test -n "$(find dist-release -type f -print -quit)"
-          printf '%s\n' 'Community release files:'
-          ls -lh dist-release
+          node --input-type=module -e '
+            import { copyFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+            import { join } from "node:path";
+            const target = process.env.RELEASE_TARGET;
+            const output = join("apps/desktop/.desktop-build/targets", target, "artifacts");
+            const extensions = target === "linux-x64" ? [".AppImage", ".deb", ".rpm"] : target === "win-x64" ? [".exe"] : [".dmg", ".zip"];
+            const files = readdirSync(output, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => entry.name);
+            mkdirSync("dist-release", { recursive: true });
+            for (const extension of extensions) {
+              const matches = files.filter(file => file.endsWith(extension));
+              if (matches.length !== 1) throw new Error(`Expected one ${extension} installer for ${target}, got ${matches.length}`);
+              const file = matches[0];
+              copyFileSync(join(output, file), join("dist-release", file));
+              console.log(`${file}: ${statSync(join(output, file)).size} bytes`);
+            }
+          '
 
       - uses: actions/upload-artifact@v4
         with:
@@ -154,8 +172,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          (cd dist-release && sha256sum * > SHA256SUMS.txt)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist-release/* --clobber
           else
-            gh release create "$RELEASE_TAG" dist-release/* --title "DeepSeek Harness ${RELEASE_TAG#desktop-v}" --generate-notes
+            options=()
+            [[ "${RELEASE_TAG#desktop-v}" != *-* ]] || options+=(--prerelease)
+            gh release create "$RELEASE_TAG" dist-release/* --title "DeepSeek Harness ${RELEASE_TAG#desktop-v}" --generate-notes "${options[@]}"
           fi

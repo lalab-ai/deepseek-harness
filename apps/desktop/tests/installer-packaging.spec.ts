@@ -31,10 +31,12 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_TARGET_PLATFORM: 'darwin', DSH_DESKTOP_TARGET_ARCH: 'arm64' }, 'darwin', 'arm64')
     expect(mac).toMatchObject({ artifactName: 'deepseek-harness-${version}-${os}-${arch}-community.${ext}',
       mac: { identity: '-', forceCodeSigning: false, hardenedRuntime: false, notarize: false }, publish: null })
+    expect(mac.mac.signIgnore).toContain('/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)')
     const win = createElectronBuilderConfig({ DSH_DESKTOP_DISTRIBUTION: 'github', DSH_DESKTOP_APP_ID: 'com.example.community',
-      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' }, 'win32', 'x64')
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64', DSH_DESKTOP_UNSIGNED: '1' }, 'win32', 'x64')
     expect(win).toMatchObject({ artifactName: 'deepseek-harness-${version}-${os}-${arch}-community.${ext}',
       win: { forceCodeSigning: false }, publish: null })
+    expect(win.directories.output).toMatch(/targets[\\/]win-x64[\\/]artifacts$/u)
   })
 
   it.each(['win32', 'darwin'] as const)('rejects a missing production policy before signing on %s', async (platform) => {

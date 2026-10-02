@@ -1,8 +1,10 @@
 /** Sign final native runtime files before the enclosing Desktop application is signed. */
 
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { closeSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { inventoryDesktopRuntime } from '../src/runtime-tree.ts'
 import type { MacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { cachedMacOSSignature, pruneMacOSSignatureCache } from './macos-signature-cache.ts'
@@ -17,6 +19,37 @@ function magic(path: string): string {
     const header = Buffer.alloc(4)
     return readSync(descriptor, header, 0, 4, 0) === 4 ? header.toString('hex') : ''
   } finally { closeSync(descriptor) }
+}
+
+/**
+ * Apply ad hoc signatures before sealing community runtime bytes; all signers settle before return.
+ * @param root - Materialized runtime without symlinks.
+ * @param appId - Application identifier used for embedded runtime code.
+ * @param arch - Target runtime architecture.
+ * @returns Number of signed native files.
+ */
+export async function signAdHocMacOSRuntime(root: string, appId: string, arch: 'arm64' | 'x64'): Promise<number> {
+  const files = inventoryDesktopRuntime(root).map(file => file.path).filter(path => MACH_O_MAGICS.has(magic(join(root, path))))
+  let next = 0
+  const workers = Array.from({ length: Math.min(4, files.length) }, async () => {
+    for (;;) {
+      const path = files[next++]
+      if (path === undefined) return
+      const isNode = path === 'dependencies/node/bin/node'
+      const needsJit = isNode
+        || /^node_modules\/@deepseek-ai\/libreoffice-kit-darwin-(?:arm64|x64)\/bin\/libreoffice-kit$/u.test(path)
+      const entitlements = join(import.meta.dirname, isNode && arch === 'x64' ? 'node-x64-entitlements.plist' : 'jit-entitlements.plist')
+      const file = join(root, path)
+      await promisify(execFile)('/usr/bin/codesign', [
+        '--force', '--sign', '-', '--identifier', `${appId}.runtime.${createHash('sha256').update(path).digest('hex')}`,
+        ...(needsJit ? ['--entitlements', entitlements] : []), file,
+      ])
+      await promisify(execFile)('/usr/bin/codesign', ['--verify', '--strict', file])
+    }
+  })
+  const results = await Promise.allSettled(workers)
+  for (const result of results) if (result.status === 'rejected') throw result.reason
+  return files.length
 }
 
 /**

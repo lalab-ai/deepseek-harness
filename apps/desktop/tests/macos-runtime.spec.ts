@@ -2,10 +2,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { signMacOSRuntime } from '../scripts/macos-runtime.ts'
+import { signAdHocMacOSRuntime, signMacOSRuntime } from '../scripts/macos-runtime.ts'
 import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
 
 vi.mock('../scripts/verify-macos-signature.mjs', () => ({ signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn() }))
+const { execute } = vi.hoisted(() => ({ execute: vi.fn(async () => undefined) }))
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  const { promisify } = await import('node:util')
+  return { ...original, execFile: Object.assign(vi.fn(), { [promisify.custom]: execute }) }
+})
 const roots: string[] = []
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), 'desktop-signing-'))
@@ -66,4 +72,42 @@ it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpe
       join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
   }
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(addon, expect.any(String), identity, undefined)
+})
+
+it.each(['arm64', 'x64'] as const)('seals community %s Node code with an ad hoc signature and verifies it', async (arch) => {
+  const path = root()
+  const node = join(path, 'dependencies/node/bin/node')
+  mkdirSync(join(node, '..'), { recursive: true })
+  writeFileSync(node, Buffer.from('cffaedfe00000000', 'hex'))
+  writeFileSync(join(path, 'data.json'), '{}')
+  await expect(signAdHocMacOSRuntime(path, 'com.example.app', arch)).resolves.toBe(1)
+  expect(execute).toHaveBeenCalledWith('/usr/bin/codesign', [
+    '--force', '--sign', '-', '--identifier', expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u),
+    '--entitlements', join(import.meta.dirname, '../scripts', arch === 'x64' ? 'node-x64-entitlements.plist' : 'jit-entitlements.plist'), node,
+  ])
+  expect(execute).toHaveBeenCalledWith('/usr/bin/codesign', ['--verify', '--strict', node])
+  expect(execute).toHaveBeenCalledTimes(2)
+})
+
+it('waits for community signers to finish before reporting a signing failure', async () => {
+  const path = root()
+  for (const name of ['a.node', 'b.node']) writeFileSync(join(path, name), Buffer.from('cffaedfe00000000', 'hex'))
+  let release!: () => void
+  const barrier = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => { started = resolve })
+  execute.mockImplementation(async (_command?: string, args?: string[]) => {
+    if (args?.includes('--force') !== true) return
+    if (args.at(-1)?.endsWith('a.node') === true) throw new Error('ad hoc signing failed')
+    started()
+    await barrier
+  })
+  let completed = false
+  const result = signAdHocMacOSRuntime(path, 'com.example.app', 'arm64').catch((error: unknown) => { completed = true; return error })
+  try {
+    await ready
+    expect(completed).toBe(false)
+  } finally { release() }
+  expect(await result).toMatchObject({ message: 'ad hoc signing failed' })
+  expect(execute).toHaveBeenCalledWith('/usr/bin/codesign', ['--verify', '--strict', join(path, 'b.node')])
 })

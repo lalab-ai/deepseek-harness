@@ -527,7 +527,7 @@ export async function packageTarget(
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
-    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(unsigned ? ['--unsigned'] : [])], targetEnv)
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(unsigned && !github ? ['--unsigned'] : [])], targetEnv)
   }
   if (!invocation.directory && !unsigned && !github && target.platform !== 'linux') {
     writeReleaseRecord(target as DesktopPackageTarget & { platform: 'darwin' | 'win32'; name: DesktopReleaseTargetName }, electronBuilderEnv, buildPaths.artifacts)
