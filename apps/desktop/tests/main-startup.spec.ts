@@ -693,7 +693,7 @@ describe('desktop main startup', () => {
     }
   })
 
-  it.each(['darwin', 'win32', 'linux'] as const)('limits native titlebar styling to macOS on %s', async (platform) => {
+  it.each(['darwin', 'win32', 'linux'] as const)('uses platform caption controls on %s', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -702,16 +702,13 @@ describe('desktop main startup', () => {
     expect(window.options).toMatchObject({ autoHideMenuBar: platform === 'linux' })
     if (platform === 'darwin') {
       expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', vibrancy: 'sidebar', backgroundColor: '#00000000' })
-    } else if (platform === 'win32') {
+    } else {
       expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT } })
       expect(window.options).not.toHaveProperty('vibrancy')
       expect(harness.menu.mock.calls[0]![0]).toEqual([
         { role: 'toggleDevTools', visible: false },
         { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
       ])
-    } else {
-      expect(window.options).not.toHaveProperty('titleBarStyle')
-      expect(window.options).not.toHaveProperty('vibrancy')
     }
     expect(harness.hosts).toHaveLength(0)
   })
@@ -874,6 +871,11 @@ describe('desktop main startup', () => {
     await harness.preparing.promise
     const describeItem = (item: MenuItemConstructorOptions): string | undefined =>
       item.role ?? (item.type === 'separator' ? 'separator' : item.label)
+    if (platform === 'linux') {
+      expect(harness.handlers.has(DESKTOP_IPC.windowsMenu)).toBe(true)
+      expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
+      return
+    }
     const template = harness.menu.buildFromTemplate.mock.calls
       .map(call => call[0])
       .find(items => items.some(item => item.role === 'editMenu'))

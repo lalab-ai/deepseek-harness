@@ -1,5 +1,7 @@
 # DeepSeek Harness 桌面端
 
+Linux 与 Windows 在 40px 窗口顶栏内显示应用与编辑菜单，旁边保留原生最小化、最大化和关闭按钮。顶栏跟随应用语言与主题，空白区域可拖动窗口。Linux 复用 Windows 的顶栏布局。
+
 [English](README.md) | 中文
 
 桌面埋点遵循[产品采集策略](../../packages/client/product-analytics/README.zh.md)及其动态应用配置，不包含 Web 使用情况。安装更新会等待该操作的本地埋点接收请求结束，再锁定 API 准入并停止 Host。接收请求的时限为一秒，失败不会阻止安装，也不等待收集端完成发送。

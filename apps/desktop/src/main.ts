@@ -211,7 +211,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     minHeight: 600,
     show,
     autoHideMenuBar: process.platform === 'linux',
-    ...(process.platform === 'win32' && primary ? {
+    ...((process.platform === 'win32' || process.platform === 'linux') && primary ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
@@ -975,7 +975,7 @@ async function main(): Promise<void> {
     { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
   ]
   const refreshApplicationMenu = (): void => {
-    Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32' ? devToolsItems : [{
+    Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32' || process.platform === 'linux' ? devToolsItems : [{
       label: darwin ? app.name : currentDesktopLocale().messages.application,
       submenu: [...applicationItems(), ...devToolsItems],
     }, ...platformMenus()]))
@@ -1007,7 +1007,7 @@ async function main(): Promise<void> {
     ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
   })
 
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' || process.platform === 'linux') {
     ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
       assertDesktopSender(event, ['app'])
       if (mainWindow === undefined || event.sender !== mainWindow.webContents

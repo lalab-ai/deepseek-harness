@@ -1,5 +1,7 @@
 # DeepSeek Harness Desktop
 
+Linux and Windows show Application and Edit menus inside the 40px window caption, beside native minimize, maximize, and close controls. The caption follows the application language and theme; its empty area drags the window. Linux uses the same caption layout as Windows.
+
 English | [中文](README.zh.md)
 
 Desktop analytics follows the [product collection policy](../../packages/client/product-analytics/README.md), including its live application setting. Web usage is excluded. Update installation waits for its local analytics intake before locking API admission and stopping the Host. Intake has a one-second deadline; failure does not prevent installation, and collector delivery is not awaited.
