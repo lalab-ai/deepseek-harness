@@ -70,7 +70,7 @@ jobs:
             appendFileSync(process.env.GITHUB_ENV, `RELEASE_TAG=${tag}\nRELEASE_VERSION=${tag.slice(9)}\n`);
           '
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.7.0
 
