@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-sidebar-files",
   "description": "Workspace file tree tab type for the right Sidebar: lazy directory listing over the workspaceFiles Remote namespace, opening files into the Sidebar",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0-rc.3",
   "publishConfig": {
     "access": "public"
   },
@@ -50,6 +50,7 @@
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-shortcuts": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
     "@deepseek-ai/dsh-client-ui-dockkit": "workspace:*",
@@ -64,10 +65,9 @@
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
-    "react": "^18.2.0",
     "clsx": "^2.0.0",
-    "react-dom": "^18.2.0",
-    "@deepseek-ai/dsh-client-shortcuts": "workspace:*"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "files": [
     "lib/index.js",

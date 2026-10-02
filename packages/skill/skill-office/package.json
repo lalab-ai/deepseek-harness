@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-office",
   "description": "Bundled Word, PowerPoint, and Excel workflows and structural checks",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0-rc.3",
   "publishConfig": {
     "access": "public"
   },
@@ -27,14 +27,14 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill": "workspace:*",
-    "@deepseek-ai/cordis": "workspace:~"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-skill": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-skill": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
-    "@deepseek-ai/cordis-plugin-include": "workspace:~"
+    "@deepseek-ai/dsh-skill": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/libreoffice-kit": "^0.1.1",
