@@ -26,7 +26,7 @@ env:
   DSH_DESKTOP_APP_ID: com.deepseek.harness
 
 jobs:
-  build:
+  build-unix:
     name: ${{ matrix.target }}
     strategy:
       fail-fast: false
@@ -35,19 +35,12 @@ jobs:
           - target: linux-x64
             runner: ubuntu-24.04
             script: github:linux:x64
-            shell: bash
           - target: mac-arm64
             runner: macos-15
             script: github:mac:arm64
-            shell: bash
           - target: mac-x64
             runner: macos-15-intel
             script: github:mac:x64
-            shell: bash
-          - target: win-x64
-            runner: windows-2025
-            script: github:win:x64
-            shell: pwsh
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
@@ -61,7 +54,7 @@ jobs:
       - name: Resolve release version
         env:
           INPUT_RELEASE_TAG: ${{ inputs.tag }}
-        shell: ${{ matrix.shell }}
+        shell: bash
         run: |
           node --input-type=module -e '
             import { appendFileSync } from "node:fs";
@@ -81,11 +74,11 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        shell: ${{ matrix.shell }}
+        shell: bash
         run: pnpm install --frozen-lockfile
 
       - name: Check release version
-        shell: ${{ matrix.shell }}
+        shell: bash
         run: |
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
@@ -95,7 +88,7 @@ jobs:
           '
 
       - name: Build community package
-        shell: ${{ matrix.shell }}
+        shell: bash
         env:
           DESKTOP_SCRIPT: ${{ matrix.script }}
         run: |
@@ -108,7 +101,7 @@ jobs:
           '
 
       - name: Collect distributable files
-        shell: ${{ matrix.shell }}
+        shell: bash
         env:
           RELEASE_TARGET: ${{ matrix.target }}
         run: |
@@ -136,9 +129,101 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+
+  build-windows:
+    name: win-x64
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Manual reruns use the current default branch so a failed tag can be repaired without moving it.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve release version
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.tag }}
+        shell: pwsh
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const tag = process.env.GITHUB_EVENT_NAME === "workflow_dispatch" ? process.env.INPUT_RELEASE_TAG : process.env.GITHUB_REF_NAME;
+            if (!/^desktop-v[0-9][0-9A-Za-z.-]*$/.test(tag ?? "")) throw new Error(`Expected a desktop-v<version> tag, got ${tag}`);
+            appendFileSync(process.env.GITHUB_ENV, `RELEASE_TAG=${tag}\nRELEASE_VERSION=${tag.slice(9)}\n`);
+          '
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release version
+        shell: pwsh
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { validateDesktopBuildVersion } from "./apps/desktop/scripts/desktop-build-version.mjs";
+            const version = JSON.parse(readFileSync("apps/desktop/package.json", "utf8")).version;
+            validateDesktopBuildVersion(process.env.RELEASE_VERSION, version);
+          '
+
+      - name: Build community package
+        shell: pwsh
+        env:
+          DESKTOP_SCRIPT: github:win:x64
+        run: |
+          node --input-type=module -e '
+            import { spawnSync } from "node:child_process";
+            const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit" });
+            if (result.error) throw result.error;
+            process.exit(result.status ?? 1);
+          '
+
+      - name: Collect distributable files
+        shell: pwsh
+        env:
+          RELEASE_TARGET: win-x64
+        run: |
+          node --input-type=module -e '
+            import { copyFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+            import { join } from "node:path";
+            const target = process.env.RELEASE_TARGET;
+            const output = join("apps/desktop/.desktop-build/targets", target, "artifacts");
+            const extensions = target === "linux-x64" ? [".AppImage", ".deb", ".rpm"] : target === "win-x64" ? [".exe"] : [".dmg", ".zip"];
+            const files = readdirSync(output, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => entry.name);
+            mkdirSync("dist-release", { recursive: true });
+            for (const extension of extensions) {
+              const matches = files.filter(file => file.endsWith(extension));
+              if (matches.length !== 1) throw new Error(`Expected one ${extension} installer for ${target}, got ${matches.length}`);
+              const file = matches[0];
+              copyFileSync(join(output, file), join("dist-release", file));
+              console.log(`${file}: ${statSync(join(output, file)).size} bytes`);
+            }
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-win-x64
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+
   publish:
     name: Publish GitHub release
-    needs: build
+    needs: [build-unix, build-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
