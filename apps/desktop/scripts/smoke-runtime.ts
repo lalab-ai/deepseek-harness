@@ -98,7 +98,9 @@ export function apply(ctx) {
     manifest.dependencies[pluginName] = '1.0.0'
     manifest.dsh.profile.bundles.push(pluginName)
     writeFileSync(join(profile, 'package.json'), JSON.stringify(manifest))
-    const officeTimeoutMs = Number(environment.DSH_DESKTOP_SMOKE_OFFICE_TIMEOUT_MS ?? 60_000)
+    const configuredOfficeTimeout = environment.DSH_DESKTOP_SMOKE_OFFICE_TIMEOUT_MS
+    const officeTimeoutMs = configuredOfficeTimeout === undefined || configuredOfficeTimeout === ''
+      ? 60_000 : Number(configuredOfficeTimeout)
     if (!Number.isSafeInteger(officeTimeoutMs) || officeTimeoutMs < 1) {
       throw new Error('desktop runtime: invalid DSH_DESKTOP_SMOKE_OFFICE_TIMEOUT_MS')
     }
