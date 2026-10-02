@@ -95,7 +95,7 @@ jobs:
           node --input-type=module -e '
             import { spawnSync } from "node:child_process";
             const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit" });
+            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit", shell: process.platform === "win32" });
             if (result.error) throw result.error;
             process.exit(result.status ?? 1);
           '
@@ -186,7 +186,7 @@ jobs:
           node --input-type=module -e '
             import { spawnSync } from "node:child_process";
             const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit" });
+            const result = spawnSync(pnpm, ["run", `package:desktop:${process.env.DESKTOP_SCRIPT}`, "--", "--build-version", process.env.RELEASE_VERSION], { stdio: "inherit", shell: process.platform === "win32" });
             if (result.error) throw result.error;
             process.exit(result.status ?? 1);
           '
