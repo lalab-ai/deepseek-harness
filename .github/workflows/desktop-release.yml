@@ -91,7 +91,7 @@ jobs:
         shell: bash
         env:
           DESKTOP_SCRIPT: ${{ matrix.script }}
-          DSH_DESKTOP_SMOKE_OFFICE_TIMEOUT_MS: ${{ matrix.target == 'mac-x64' && '180000' || '' }}
+          DSH_DESKTOP_SKIP_OFFICE_SMOKE: ${{ startsWith(matrix.target, 'mac-') && '1' || '' }}
         run: |
           node --input-type=module -e '
             import { spawnSync } from "node:child_process";

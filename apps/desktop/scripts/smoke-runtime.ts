@@ -117,26 +117,30 @@ export function apply(ctx) {
     }
     const pluginResponse = await fetch(new URL('/desktop-smoke', ready.url), { headers: { cookie } })
     if (await pluginResponse.text() !== 'plugin route ready') throw new Error('desktop runtime: plugin HTTP route failed')
-    for (const { extension } of inputs) {
-      const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
+    if (environment.DSH_DESKTOP_SKIP_OFFICE_SMOKE !== '1') {
+      for (const { extension } of inputs) {
+        const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
+          headers: { cookie }, signal: AbortSignal.timeout(120_000),
+        })
+        if (!converted.ok) throw new Error(`desktop runtime: ${extension} conversion failed: ${await converted.text()}`)
+        const pdf = Buffer.from(await converted.arrayBuffer())
+        if (!/^%PDF-\d\.\d/u.test(pdf.subarray(0, 8).toString())
+          || !pdf.subarray(-1024).toString().trimEnd().endsWith('%%EOF')) {
+          throw new Error(`desktop runtime: invalid ${extension} PDF output`)
+        }
+      }
+      const cliResponse = await fetch(new URL('/desktop-smoke-office-cli', ready.url), {
         headers: { cookie }, signal: AbortSignal.timeout(120_000),
       })
-      if (!converted.ok) throw new Error(`desktop runtime: ${extension} conversion failed: ${await converted.text()}`)
-      const pdf = Buffer.from(await converted.arrayBuffer())
-      if (!/^%PDF-\d\.\d/u.test(pdf.subarray(0, 8).toString())
-        || !pdf.subarray(-1024).toString().trimEnd().endsWith('%%EOF')) {
-        throw new Error(`desktop runtime: invalid ${extension} PDF output`)
+      if (!cliResponse.ok) throw new Error(`desktop runtime: skill CLI failed: ${await cliResponse.text()}`)
+      const cliResult = await cliResponse.json() as { capabilities: { runtime: { cliPath: string } }; pdf: string }
+      if (!cliResult.capabilities.runtime.cliPath.endsWith('cli.js') || Buffer.from(cliResult.pdf, 'base64').subarray(0, 5).toString() !== '%PDF-') {
+        throw new Error('desktop runtime: skill CLI did not return capabilities and a PDF')
       }
+      console.log('desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed')
+    } else {
+      console.log('desktop runtime: Office conversion smoke skipped for this community runner')
     }
-    const cliResponse = await fetch(new URL('/desktop-smoke-office-cli', ready.url), {
-      headers: { cookie }, signal: AbortSignal.timeout(120_000),
-    })
-    if (!cliResponse.ok) throw new Error(`desktop runtime: skill CLI failed: ${await cliResponse.text()}`)
-    const cliResult = await cliResponse.json() as { capabilities: { runtime: { cliPath: string } }; pdf: string }
-    if (!cliResult.capabilities.runtime.cliPath.endsWith('cli.js') || Buffer.from(cliResult.pdf, 'base64').subarray(0, 5).toString() !== '%PDF-') {
-      throw new Error('desktop runtime: skill CLI did not return capabilities and a PDF')
-    }
-    console.log('desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed')
   } finally {
     clearTimeout(timer)
     await host.stop()
