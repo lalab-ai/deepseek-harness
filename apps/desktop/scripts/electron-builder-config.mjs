@@ -245,8 +245,8 @@ export function createElectronBuilderConfig(
       category: 'Development',
       target: ['AppImage', 'deb', 'rpm'],
     },
-    deb: { packageName: 'deepseek-harness', compression: 'gz', afterInstall: fileURLToPath(new URL('./after-install.tpl', import.meta.url)) },
-    rpm: { packageName: 'deepseek-harness', compression: 'gzip', afterInstall: fileURLToPath(new URL('./after-install.tpl', import.meta.url)) },
+    deb: { packageName: 'deepseek-harness', compression: 'gz', afterInstall: fileURLToPath(new URL('../after-install.tpl', import.meta.url)) },
+    rpm: { packageName: 'deepseek-harness', compression: 'gzip', afterInstall: fileURLToPath(new URL('../after-install.tpl', import.meta.url)) },
     nsis: {
       installerSidebar: join(buildPaths.root, 'installer-ui', 'uninstaller-sidebar.bmp'),
       uninstallerSidebar: join(buildPaths.root, 'installer-ui', 'uninstaller-sidebar.bmp'),
