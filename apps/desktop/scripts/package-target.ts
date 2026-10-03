@@ -493,6 +493,9 @@ export async function packageTarget(
   rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
   mkdirSync(buildPaths.packedLandlock, { recursive: true })
   await execute(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
+  if (target.platform !== 'win32') {
+    await execute(['--dir', 'native/system', 'run', 'build:native'], buildEnv, REPOSITORY_ROOT)
+  }
   await execute([
     '--dir',
     'native/system/packages/entry',
