@@ -80,6 +80,7 @@ const rendererConsole = new RendererConsoleTail()
 
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
+app.setDesktopName?.('deepseek-harness')
 app.setAppLogsPath()
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
@@ -1069,9 +1070,17 @@ async function main(): Promise<void> {
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
-    // Closing hides: the page and the Host keep running, and the next show resumes the same document.
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
+      if (process.platform === 'linux') {
+        // Linux desktop launchers treat the close button as an explicit application exit.
+        // Route through the normal quit confirmation so active tasks remain protected.
+        event.preventDefault()
+        if (updateDialog.isOpen) { updateDialog.focus(); return }
+        app.quit()
+        return
+      }
+      // Windows keeps the application available in the tray after closing its window.
       event.preventDefault()
       if (updateDialog.isOpen) { updateDialog.focus(); return }
       const hide = (): void => {
@@ -1252,10 +1261,12 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+    const cleanup = Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
-      .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+      .catch((error: unknown) => { console.error(error) })
+    const timeout = new Promise<void>((resolve) => { setTimeout(resolve, 10_000) })
+    void Promise.race([cleanup, timeout]).finally(() => { app.quit(); app.exit(0) })
   }
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {

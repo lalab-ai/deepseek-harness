@@ -239,6 +239,7 @@ export function createElectronBuilderConfig(
     },
     linux: {
       executableName: 'deepseek-harness',
+      syncDesktopName: true,
       maintainer: 'DeepSeek',
       vendor: 'DeepSeek',
       icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),

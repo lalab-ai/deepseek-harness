@@ -139,6 +139,11 @@ async function main(): Promise<void> {
     const target = desktopTargetPlatform(targetName)
     const platform = target.platform
     const modules = join(BUILD_ROOT, 'node_modules')
+    const nativePackageName = `@deepseek-ai/node-addon-system-${platform}-${target.arch}`
+    const nativePackageManifest = join(modules, '@deepseek-ai', `node-addon-system-${platform}-${target.arch}`, 'package.json')
+    if (!existsSync(nativePackageManifest)) {
+      throw new Error(`desktop runtime: production install omitted ${nativePackageName}; the packaged Desktop runtime cannot load flock or Landlock`)
+    }
     const officeManifest = JSON.parse(readFileSync(join(modules, '@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
     const officeEngine = selectOfficeEngine(officeManifest, target)
     mkdirSync(DSH_OUTPUT_ROOT, { recursive: true })
