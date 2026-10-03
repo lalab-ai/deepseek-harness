@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:*",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^5.4.1",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
