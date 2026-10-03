@@ -500,6 +500,20 @@ export async function packageTarget(
     '--pack-destination',
     buildPaths.packedLandlock,
   ], buildEnv, REPOSITORY_ROOT)
+  if (target.platform !== 'win32') {
+    const nativePackage = target.platform === 'darwin'
+      ? `native/system/packages/darwin-${target.arch}`
+      : `native/system/packages/linux-${target.arch}`
+    await execute([
+      '--dir',
+      nativePackage,
+      'exec',
+      'npm',
+      'pack',
+      '--pack-destination',
+      buildPaths.packedLandlock,
+    ], buildEnv, REPOSITORY_ROOT)
+  }
   await execute(['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
